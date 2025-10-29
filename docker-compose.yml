@@ -1,0 +1,120 @@
+version: "3.8"
+
+services:
+  # =====================================================
+  # 1️⃣ NGINX REVERSE PROXY
+  # =====================================================
+  nginx-proxy:
+    image: nginx:alpine
+    container_name: nginx-proxy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./nginx/certs:/etc/nginx/certs
+      - ./nginx/html:/var/www/certbot
+      - ./nginx/logs:/var/log/nginx
+    depends_on:
+      - twitter-client1
+      - twitter-client2
+      - twitter-server1
+      - twitter-server2
+    networks:
+      - app-network
+
+  # =====================================================
+  # 2️⃣ CERTBOT (Let's Encrypt)
+  # =====================================================
+  certbot:
+    image: certbot/certbot:latest
+    container_name: certbot
+    volumes:
+      - ./nginx/certs:/etc/letsencrypt
+      - ./nginx/html:/var/www/certbot
+    command: >
+      sh -c "trap exit TERM;
+      while :; do
+        certbot renew --webroot -w /var/www/certbot --quiet;
+        sleep 12h & wait $${!};
+      done"
+    networks:
+      - app-network
+
+  # =====================================================
+  # 3️⃣ FRONTEND (FE) 2 INSTANCE
+  # =====================================================
+  twitter-client1:
+    image: buithanhliem/twitter-client:latest
+    container_name: twitter-client1
+    restart: always
+    networks:
+      - app-network
+
+  twitter-client2:
+    image: buithanhliem/twitter-client:latest
+    container_name: twitter-client2
+    restart: always
+    networks:
+      - app-network
+
+  # =====================================================
+  # 4️⃣ BACKEND (BE) 2 INSTANCE
+  # =====================================================
+  twitter-server1:
+    image: buithanhliem/twitter-server:latest
+    container_name: twitter-server1
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - PORT=9000
+      - MONGO_URL=mongodb://twitter-mongo:27017/twitter-db
+      - REDIS_URL=redis://twitter-redis:6379
+    networks:
+      - app-network
+
+  twitter-server2:
+    image: buithanhliem/twitter-server:latest
+    container_name: twitter-server2
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - PORT=9000
+      - MONGO_URL=mongodb://twitter-mongo:27017/twitter-db
+      - REDIS_URL=redis://twitter-redis:6379
+    networks:
+      - app-network
+
+  # =====================================================
+  # 5️⃣ MONGODB
+  # =====================================================
+  twitter-mongo:
+    image: mongo:7
+    container_name: twitter-mongo
+    restart: always
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - app-network
+
+  # =====================================================
+  # 6️⃣ REDIS
+  # =====================================================
+  twitter-redis:
+    image: redis:7-alpine
+    container_name: twitter-redis
+    restart: always
+    command: redis-server --save 20 1 --loglevel warning
+    volumes:
+      - redis-data:/data
+    networks:
+      - app-network
+
+volumes:
+  mongo-data:
+  redis-data:
+
+networks:
+  app-network:
+    driver: bridge
